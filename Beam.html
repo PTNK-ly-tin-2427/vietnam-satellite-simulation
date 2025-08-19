@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vietnam Satellite Spot Beams (Grid Fixed + Correct Beams)</title>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; overflow:hidden; }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+
+  <!-- Cesium -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+
+  <script type="module">
+    // satellite.js
+    import * as satellite from "https://esm.sh/satellite.js";
+
+    // ===== CẤU HÌNH =====
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3Yzg5M2JjZi1mOTY5LTQ4ODgtYjg2MS02NWYwYWI1YWJkNTEiLCJpZCI6MzMxNTI3LCJpYXQiOjE3NTUwNjgwNzF9.VlqKyM0AOqobv7jkWw3aB5GwptsqHs-bWFmS1KIQ4UU";
+
+    const viewer = new Cesium.Viewer("cesiumContainer", {
+      shouldAnimate: true,
+      imageryProvider: new Cesium.IonImageryProvider({ assetId: 3954 }),
+      terrainProvider: await Cesium.createWorldTerrainAsync(),
+      baseLayerPicker: true,
+      timeline: true,
+      animation: true
+    });
+    viewer.scene.globe.enableLighting = true;
+
+    // Cấu hình lưới tổ ong
+    const GRID_RINGS = 4;
+    const CELL_RADIUS_KM = 300;
+    const CELL_RADIUS_M = CELL_RADIUS_KM * 1000;
+
+    // Bán kính footprint của beam (m)
+    const BEAM_RADIUS_M = CELL_RADIUS_M * 0.8; // ~240 km
+
+    // ===== VỆ TINH & TRẠM =====
+    const satelliteInfo = {
+      name: "ISS",
+      tle1: "1 25544U 98067A   24227.56193912  .00016717  00000-0  30129-3 0  9995",
+      tle2: "2 25544  51.6403 272.2530 0007219 130.4312 321.4938 15.49380015468249"
+    };
+
+    const groundStations = [
+      { name: "Ha Noi", lon: 105.83, lat: 21.02 },
+      { name: "Da Nang", lon: 108.22, lat: 16.06 },
+      { name: "Ho Chi Minh", lon: 106.66, lat: 10.75 },
+      { name: "Can Tho", lon: 105.78, lat: 10.04 },
+      { name: "Singapore", lon: 103.85, lat: 1.35 },
+      { name: "Tokyo", lon: 139.69, lat: 35.68 },
+    ];
+
+    // ===== KHỞI TẠO =====
+    const ellipsoid = Cesium.Ellipsoid.WGS84;
+    const satrec = satellite.twoline2satrec(satelliteInfo.tle1, satelliteInfo.tle2);
+
+    function getSatelliteEcf(time) {
+      const jsDate = Cesium.JulianDate.toDate(time);
+      const pv = satellite.propagate(satrec, jsDate);
+      if (!pv || !pv.position) return null;
+      const gmst = satellite.gstime(jsDate);
+      const ecf = satellite.eciToEcf(pv.position, gmst);
+      return new Cesium.Cartesian3(ecf.x * 1000, ecf.y * 1000, ecf.z * 1000);
+    }
+
+    const satelliteEntity = viewer.entities.add({
+      name: satelliteInfo.name,
+      position: new Cesium.CallbackProperty(getSatelliteEcf, false),
+      point: { pixelSize: 10, color: Cesium.Color.YELLOW }
+    });
+
+    // Thêm các trạm
+    groundStations.forEach(station => {
+      station.ecf = Cesium.Cartesian3.fromDegrees(station.lon, station.lat);
+      viewer.entities.add({
+        position: station.ecf,
+        point: { pixelSize: 12, color: Cesium.Color.AQUA, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
+        label: {
+          text: station.name,
+          font: '12pt monospace',
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          outlineWidth: 2,
+          verticalOrigin: Cesium.VerticalOrigin.TOP,
+          pixelOffset: new Cesium.Cartesian2(0, 12)
+        }
+      });
+    });
+
+    // ===== LƯỚI TỔ ONG (di chuyển theo điểm dưới vệ tinh) =====
+    function generateHoneycombGridOffsets(rings, radius) {
+      const offsets = [];
+      const horizontalSpacing = radius * 1.5;
+      const verticalSpacing = radius * Math.sqrt(3) / 2;
+
+      for (let j = -rings; j <= rings; j++) {
+        for (let i = -rings; i <= rings; i++) {
+          if (Math.abs(i) + Math.abs(j) > rings && Math.abs(i + 0.5 * (j - (j & 1))) > rings) continue;
+          const x = horizontalSpacing * i;
+          const y = verticalSpacing * j;
+          const x_staggered = x + (j % 2 === 0 ? 0 : horizontalSpacing / 2);
+          offsets.push({ x: x_staggered, y: y });
+        }
+      }
+      return offsets;
+    }
+
+    const gridOffsets = generateHoneycombGridOffsets(GRID_RINGS, CELL_RADIUS_M);
+    const cellEntities = [];
+
+    gridOffsets.forEach((offset) => {
+      const cellEntity = viewer.entities.add({
+        ellipse: {
+          semiMajorAxis: CELL_RADIUS_M,
+          semiMinorAxis: CELL_RADIUS_M,
+          height: 0,
+          material: Cesium.Color.TRANSPARENT,
+          outline: true,
+          outlineWidth: 2.0,
+          outlineColor: new Cesium.CallbackProperty(time => {
+            const currentPos = cellEntity.position.getValue(time);
+            if (!currentPos) return Cesium.Color.WHITE.withAlpha(0.4);
+            for (const station of groundStations) {
+              if (Cesium.Cartesian3.distance(currentPos, station.ecf) <= CELL_RADIUS_M) {
+                return Cesium.Color.LIME;
+              }
+            }
+            return Cesium.Color.WHITE.withAlpha(0.4);
+          }, false)
+        },
+        position: new Cesium.CallbackProperty(time => {
+          const satEcf = satelliteEntity.position.getValue(time);
+          if (!satEcf) return null;
+          const subSatPoint = ellipsoid.scaleToGeodeticSurface(satEcf);
+          const enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(subSatPoint);
+          return Cesium.Matrix4.multiplyByPoint(
+            enuMatrix,
+            new Cesium.Cartesian3(offset.x, offset.y, 0),
+            new Cesium.Cartesian3()
+          );
+        }, false),
+      });
+      cellEntities.push(cellEntity);
+    });
+
+    // ===== BEAM CỦA VỆ TINH =====
+    // 1) Footprint Nadir luôn hiển thị (vòng tròn dưới vệ tinh)
+    const nadirFootprint = viewer.entities.add({
+      position: new Cesium.CallbackProperty(time => {
+        const satPos = satelliteEntity.position.getValue(time);
+        if (!satPos) return null;
+        return ellipsoid.scaleToGeodeticSurface(satPos); // điểm dưới vệ tinh
+      }, false),
+      ellipse: {
+        semiMajorAxis: BEAM_RADIUS_M,
+        semiMinorAxis: BEAM_RADIUS_M,
+        material: Cesium.Color.CYAN.withAlpha(0.25),
+        outline: true,
+        outlineColor: Cesium.Color.CYAN,
+        height: 0
+      }
+    });
+
+    // 2) Beam trúng TRẠM khi vệ tinh bay trong bán kính BEAM_RADIUS_M quanh trạm
+    groundStations.forEach(station => {
+      // Footprint tại trạm (ẩn/hiện theo điều kiện)
+      const stationBeam = viewer.entities.add({
+        position: station.ecf,
+        show: new Cesium.CallbackProperty(time => {
+          const satPos = satelliteEntity.position.getValue(time);
+          if (!satPos) return false;
+          const subSat = ellipsoid.scaleToGeodeticSurface(satPos);
+          return Cesium.Cartesian3.distance(subSat, station.ecf) <= BEAM_RADIUS_M;
+        }, false),
+        ellipse: {
+          semiMajorAxis: BEAM_RADIUS_M,
+          semiMinorAxis: BEAM_RADIUS_M,
+          material: Cesium.Color.RED.withAlpha(0.28),
+          outline: true,
+          outlineColor: Cesium.Color.RED,
+          height: 0
+        }
+      });
+
+      // Đường nối từ vệ tinh xuống trạm khi đang "chiếu"
+      viewer.entities.add({
+        polyline: {
+          positions: new Cesium.CallbackProperty(time => {
+            const satPos = satelliteEntity.position.getValue(time);
+            if (!satPos) return [];
+            const subSat = ellipsoid.scaleToGeodeticSurface(satPos);
+            const active = Cesium.Cartesian3.distance(subSat, station.ecf) <= BEAM_RADIUS_M;
+            return active ? [satPos, station.ecf] : [];
+          }, false),
+          width: 2,
+          material: Cesium.Color.RED.withAlpha(0.6)
+        }
+      });
+    });
+
+    // ===== CAMERA =====
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(108, 16, 15000000),
+      duration: 3
+    });
+  </script>
+</body>
+</html>
