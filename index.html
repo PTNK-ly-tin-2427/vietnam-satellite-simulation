@@ -2,22 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Cesium Việt Nam MAP</title>
+  <title>Cesium Việt Nam MAP - Ultra Performance</title>
   <script src="https://cdn.jsdelivr.net/npm/cesium/Build/Cesium/Cesium.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/cesium/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.1.4/satellite.min.js"></script>
   <style>
     #cesiumContainer {
-        width: 100%;
-        height: 100vh;
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-    }
-    .cesium-viewer-animationContainer,
-    .cesium-viewer-timelineContainer,
-    .cesium-viewer-infoxBoxContainer {
-        display: none !important;
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
     }
   </style>
 </head>
@@ -25,69 +20,178 @@
   <div id="cesiumContainer"></div>
   <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxYTJmOTU0MS1iMGI5LTQyYmUtOGEyYy00N2RhMWM3ODQ0NzgiLCJpZCI6MzMxNjE1LCJpYXQiOjE3NTUwODMyNTJ9.GfJoFUD2JtuuK71LgrQQ8x7FCQ_fEtxQWxHaRQzuanE';
-
-    // Khởi tạo Cesium Viewer
-    const viewer = new Cesium.Viewer('cesiumContainer', {
-        selectionIndicator: false,
-        baseLayerPicker: false,
-        geocoder: false,
-        homeButton: false,
-        sceneModePicker: false,
-        navigationHelpButton: false,
+    // --- Viewer tối ưu ---
+    const viewer = new Cesium.Viewer("cesiumContainer", {
+      selectionIndicator: false,
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      sceneModePicker: true,
+      navigationHelpButton: false,
+      animation: false,
+      fullscreenButton: false,
+      shadows: false,
+      shouldAnimate: true,
+      scene3DOnly: false,
     });
 
-    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 5000000;
-    viewer.scene.screenSpaceCameraController.maximumZoomDistance = 50000000;
+    // Hiện FPS
+    viewer.scene.debugShowFramesPerSecond = true;
 
+    // Terrain nhẹ
+    viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+    viewer.scene.globe.maximumScreenSpaceError = 8;
+
+    // Render khi thay đổi
+
+viewer.scene.requestRenderMode = false;
+
+// Bật hiển thị FPS
+viewer.scene.debugShowFramesPerSecond = true;
+
+    // Giảm độ phân giải
+    viewer.resolutionScale = 0.8;
+
+    // Tắt hiệu ứng nặng
+    viewer.scene.globe.enableLighting = false;
+    viewer.scene.globe.depthTestAgainstTerrain = false;
+    viewer.scene.fog.enabled = false;
+
+    // --- Nền toàn cầu low-res ---
+    const lowResProvider = new Cesium.SingleTileImageryProvider({
+      url: "light.jpg"
+    });
+    viewer.imageryLayers.addImageryProvider(lowResProvider);
+
+    // --- Overlay VN chi tiết ---
+    const vnProvider = new Cesium.UrlTemplateImageryProvider({
+      url: "light.jpg",
+      minimumLevel: 5,
+      maximumLevel: 12,
+    });
+    const vnLayer = viewer.imageryLayers.addImageryProvider(vnProvider);
+    vnLayer.show = false;
+
+    // Camera mặc định VN
     viewer.camera.setView({
       destination: Cesium.Rectangle.fromDegrees(102, 8, 114, 24),
       orientation: {
-        heading: Cesium.Math.toRadians(0),
-        pitch: Cesium.Math.toRadians(-90),
-        roll: 0
+        heading: 0,
+        pitch: -Cesium.Math.PI_OVER_TWO,
+        roll: 0,
+      },
+    });
+
+Cesium.GeoJsonDataSource.load("./VNM_1.geojson", {
+  stroke: Cesium.Color.YELLOW,
+  strokeWidth: 2,
+  clampToGround: false,
+}).then((ds) => {
+  viewer.dataSources.add(ds);
+
+  ds.entities.values.forEach(entity => {
+    if (entity.polygon) {
+      // Style polygon
+      entity.polygon.material = Cesium.Color.YELLOW.withAlpha(0.3);
+      entity.polygon.outline = true;
+      entity.polygon.outlineColor = Cesium.Color.ORANGE;
+
+      // ---- Tính centroid ----
+      const positions = entity.polygon.hierarchy.getValue().positions;
+      let lon = 0, lat = 0;
+      positions.forEach(pos => {
+        const carto = Cesium.Cartographic.fromCartesian(pos);
+        lon += Cesium.Math.toDegrees(carto.longitude);
+        lat += Cesium.Math.toDegrees(carto.latitude);
+      });
+      lon /= positions.length;
+      lat /= positions.length;
+
+      // ---- Thêm label tỉnh ----
+      viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(lon, lat),
+        label: {
+          text: entity.properties.name || entity.properties.ten_tinh || "???",
+          font: 'bold 20px "Times New Roman", serif',
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          show: false,
+          scaleByDistance: new Cesium.NearFarScalar(500000, 1.0, 1500000, 0.0)
+        }
+      });
+    }
+  });
+
+  // Label VIỆT NAM
+  const vietnamLabel = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(107, 16),
+    label: {
+      text: "VIỆT NAM",
+      font: "bold 30px 'Times New Roman', serif",
+      fillColor: Cesium.Color.BLACK,
+      outlineColor: Cesium.Color.WHITE,
+      outlineWidth: 3,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.CENTER,
+      heightReference: Cesium.HeightReference.NONE,
+      show: true
+    }
+  });
+
+  // Cập nhật hiển thị label theo zoom
+  function updateLabels() {
+    const cameraHeight = viewer.camera.positionCartographic.height;
+    const showProvinceLabels = cameraHeight < 600000;
+    const showVietnamLabel = cameraHeight >= 500000;
+
+    viewer.entities.values.forEach(entity => {
+      if (entity.label && entity.label.text.getValue() !== "VIỆT NAM") {
+        entity.label.show = showProvinceLabels;
+      }
+      if (entity.polygon) {
+        entity.polygon.material = showProvinceLabels
+          ? Cesium.Color.TRANSPARENT
+          : Cesium.Color.YELLOW.withAlpha(0.1);
       }
     });
 
-    Cesium.GeoJsonDataSource.load('./VNM_1.geojson', {
-      stroke: Cesium.Color.YELLOW,
-      strokeWidth: 2,
-      clampToGround: false
-    }).then(dataSource => {
-        viewer.dataSources.add(dataSource);
-        const entities = dataSource.entities.values;
+    vietnamLabel.label.show = showVietnamLabel;
+  }
 
-        for (let i = 0; i < entities.length; i++) {
-            const entity = entities[i];
-            if (entity.polygon) {
-                entity.polygon.height = 0;
-                entity.polygon.outline = true;
-                entity.polygon.outlineColor = Cesium.Color.YELLOW;
-                entity.polygon.material = Cesium.Color.YELLOW.withAlpha(0.1);
+  viewer.camera.changed.addEventListener(updateLabels);
+  updateLabels();
+}).catch(err => {
+  console.error("❌ Lỗi tải GeoJSON:", err);
+});
 
-                const hierarchy = entity.polygon.hierarchy.getValue(Cesium.JulianDate.now());
-                const positions = hierarchy.positions;
-                const rectangle = Cesium.Rectangle.fromCartesianArray(positions);
-                const center = Cesium.Rectangle.center(rectangle);
-                const lonCentroid = Cesium.Math.toDegrees(center.longitude);
-                const latCentroid = Cesium.Math.toDegrees(center.latitude);
 
-                viewer.entities.add({
-                    position: Cesium.Cartesian3.fromDegrees(lonCentroid, latCentroid),
-                    label: {
-                        text: entity.properties.name || entity.properties.ten_tinh || '???',
-                        font: 'bold 20px "Times New Roman", serif',
-                        fillColor: Cesium.Color.WHITE,
-                        outlineColor: Cesium.Color.BLACK,
-                        outlineWidth: 2,
-                        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                        verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                        show: false,
-                        scaleByDistance: new Cesium.NearFarScalar(500000, 1.0, 1500000, 0.0)
-                    }
-                });
-            }
-        }
+            const islands = [
+            { name: "Quần Đảo Hoàng Sa", lon: 111.5, lat: 16.5 },
+            { name: "Quần Đảo Trường Sa", lon: 114.3, lat: 8.6 }
+        ];
 
+        islands.forEach(island => {
+            viewer.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(island.lon, island.lat),
+                point: {
+                    pixelSize: 10,
+                    color: Cesium.Color.YELLOW,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 2
+                },
+                label: {
+                    text: island.name,
+                    font: "bold 28px 'Arial', serif",
+                    fillColor: Cesium.Color.PINK,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    pixelOffset: new Cesium.Cartesian2(0, -10)
+                }
+            });
+        });
         const majorCities = [
             { name: "Hà Nội", lon: 105.8544, lat: 21.0285 },
             { name: "TP.HCM", lon: 106.6297, lat: 10.8231 },
@@ -110,7 +214,7 @@
                 label: {
                 text: city.name,
                 font: "bold 25px 'Times New Roman', serif",
-                fillColor: Cesium.Color.PINK,
+                fillColor: Cesium.Color.BLACK,
                 outlineColor: Cesium.Color.WHITE,
                 outlineWidth: 1,
                 style: Cesium.LabelStyle.FILL_AND_OUTLINE,
@@ -120,70 +224,6 @@
                 }
             });
         });
-
-        const islands = [
-            { name: "Quần Đảo Hoàng Sa", lon: 111.5, lat: 16.5 },
-            { name: "Quần Đảo Trường Sa", lon: 114.3, lat: 8.6 }
-        ];
-
-        islands.forEach(island => {
-            viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(island.lon, island.lat),
-                point: {
-                    pixelSize: 10,
-                    color: Cesium.Color.YELLOW,
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2
-                },
-                label: {
-                    text: island.name,
-                    font: "bold 25px 'Times New Roman', serif",
-                    fillColor: Cesium.Color.PINK,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                    pixelOffset: new Cesium.Cartesian2(0, -10)
-                }
-            });
-        });
-
-        const vietnamLabel = viewer.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(107, 16),
-            label: {
-                text: "VIỆT NAM",
-                font: "bold 30px 'Times New Roman', serif",
-                fillColor: Cesium.Color.BLACK,
-                outlineColor: Cesium.Color.WHITE,
-                outlineWidth: 3,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                heightReference: Cesium.HeightReference.NONE,
-                show: true
-            }
-        });
-
-        function updateLabels() {
-            const cameraHeight = viewer.camera.positionCartographic.height;
-            const showProvinceLabels = cameraHeight < 600000;
-            const showVietnamLabel = cameraHeight >= 500000;
-
-            viewer.entities.values.forEach(entity => {
-                if (entity.label && entity.label.text.getValue() !== "VIỆT NAM") {
-                    entity.label.show = showProvinceLabels;
-                }
-                if (entity.polygon) {
-                    entity.polygon.material = showProvinceLabels ? Cesium.Color.TRANSPARENT : Cesium.Color.YELLOW.withAlpha(0.1);
-                }
-            });
-
-            vietnamLabel.label.show = showVietnamLabel;
-        }
-
-        viewer.camera.changed.addEventListener(updateLabels);
-        updateLabels();
-    }).catch(err => {
-      console.error('❌ Lỗi tải GeoJSON:', err);
-    });
-
     // --- BẮT ĐẦU XỬ LÝ VỆ TINH ---
 
     // Hằng số hấp dẫn của Trái Đất (km^3/s^2)
@@ -342,4 +382,5 @@
 
   </script>
 </body>
+
 </html>
