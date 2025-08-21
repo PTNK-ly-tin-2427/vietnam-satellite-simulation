@@ -1,8 +1,8 @@
-<!doctype html>
+<!Doctype html>
 <html lang="vi">
 <head>
 <meta charset="utf-8"/>
-<title>Vietnam Globe</title>
+<title>Vietnam Globe — Day/Night + Timeline</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <style>
   :root{--ui-bg:rgba(6,10,20,0.6);--ui-border:rgba(255,255,255,0.06);--label-bg:rgba(0,0,0,0.55)}
@@ -133,9 +133,9 @@
   const INITIAL_LAT = 15.5, INITIAL_LON = 108;
   const INITIAL_DIST = EARTH_R + 7;
 
-  const CITY_SHOW_DISTANCE = EARTH_R + 6.0;
-  const PROVINCE_SHOW_DISTANCE = EARTH_R + 5.2;
-  const COUNTRY_LABEL_HIDE_DISTANCE = EARTH_R + 6.6;
+  const CITY_SHOW_DISTANCE = EARTH_R + 1.0;
+  const PROVINCE_SHOW_DISTANCE = EARTH_R + 1.0;
+  const COUNTRY_LABEL_HIDE_DISTANCE = EARTH_R + 5.0;
 
   const PROVINCES_LOCAL = 'VNM_1.geojson';
   const DAY_TEX = 'light.jpg'; // required local
@@ -152,15 +152,25 @@
   // --- Controls ---
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.minDistance = EARTH_R + 1.5;
-  controls.maxDistance = EARTH_R + 40;
+  controls.minDistance = EARTH_R + 0.5;
+  controls.maxDistance = EARTH_R + 60;
   controls.enablePan = false;
   controls.autoRotate = false;
   controls.autoRotateSpeed = 30;
 
   // --- Stats (FPS) ---
   const stats = new Stats();
-  document.getElementById('stats').appendChild(stats.dom);
+stats.dom.style.position = "absolute";
+
+// xóa đi mặc định
+stats.dom.style.top = "auto";
+stats.dom.style.left = "auto";
+
+// đặt vị trí mới
+stats.dom.style.left = "0px";
+stats.dom.style.bottom = "0px";
+
+document.body.appendChild(stats.dom);
 
   // --- Lights ---
   const ambient = new THREE.AmbientLight(0xffffff, 0.35); scene.add(ambient);
@@ -177,10 +187,11 @@
 
   // Time & timeline state
   let isPlaying = false;
-  const baseRealNow = Date.now(); // ms ref point
+  const baseRealNow = Date.now();   // <-- thêm dòng này
+  // ms ref point
   let timelineOffsetMin = 0;      // minutes offset from now
-  let playSpeed = 1;              // 1..5
-  let lastPlayTick = performance.now();
+  let playSpeed = 1;
+
 
   // Timeline config for ticks
   const tickHours = 12;          // tick each 12h
@@ -298,7 +309,7 @@
     const lineMat = new THREE.LineBasicMaterial({ color:0x69c3ff, linewidth:1, opacity:0.9 });
     (gj.features || []).forEach(f=>{
       const geom = f.geometry; if(!geom) return;
-      const name = f.properties?.NAME_1 || f.properties?.name || '—';
+      const name = f.properties?.ten_tinh || f.properties?.name || '—';
       if(geom.type === 'Polygon'){
         geom.coordinates.forEach(ring => ringToLines(ring, lineMat));
         const c = centroidOfPolygon(geom.coordinates);
@@ -402,7 +413,6 @@
     document.getElementById('btnPlay').addEventListener('click', ()=>{
       isPlaying = !isPlaying;
       document.getElementById('btnPlay').textContent = isPlaying ? '⏸' : '▶︎';
-      lastPlayTick = performance.now();
     });
 
     // step buttons: +/- 1 hour per click
@@ -514,39 +524,45 @@
     return new Date(baseRealNow + timelineOffsetMin*60*1000);
   }
 
-  function updateTimeReadout(){
-    const sim = getSimulatedDate();
-    const utcStr = sim.toUTCString().slice(5,22); // e.g. "20 Aug 00:00:00"
-    const vn = new Date(sim.getTime() + 7*3600*1000);
-    const vnStr = vn.toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-    const sliderLabel = formatSliderDate(sim);
-    document.getElementById('timeReadout').textContent = `UTC: ${utcStr} | VN: ${vnStr} | Slider: ${sliderLabel}`;
-  }
+  function updateTimeReadout() {
+  const realNow = new Date();
 
-  function formatSliderDate(d){
-    const day = d.getUTCDate().toString().padStart(2,'0');
-    const mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()];
-    const hh = d.getUTCHours().toString().padStart(2,'0');
-    const mm = d.getUTCMinutes().toString().padStart(2,'0');
-    return `${day} ${mon} ${hh}:${mm}`;
-  }
+  // UTC chuẩn, không slice chuỗi linh tinh
+  const utcNowStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  }).format(realNow).replace(',', '');
 
-  // Update sun direction from SunCalc for simulated time
-  function updateSunForSimulatedTime(simDate){
-    // compute sun pos at equator lon=0 (approx), SunCalc returns azimuth/altitude in radians
-    const pos = SunCalc.getPosition(simDate, 0, 0);
-    const alt = pos.altitude;
-    const az = pos.azimuth;
-    // convert to cartesian (ENU) then to world-like vector
-    const x = Math.cos(alt) * Math.sin(az);
-    const y = Math.sin(alt);
-    const z = Math.cos(alt) * Math.cos(az);
-    const dir = new THREE.Vector3(x, y, -z).normalize();
-    if(earth && earth.material && earth.material.uniforms && earth.material.uniforms.sunDir){
-      earth.material.uniforms.sunDir.value.copy(dir);
-    }
-    sunLight.position.copy(dir.clone().multiplyScalar(10));
-  }
+  // VN chuẩn theo Asia/Ho_Chi_Minh (không cộng +7h thủ công)
+  const vnNowStr = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  }).format(realNow);
+
+  const sim = getSimulatedDate(); // thời gian slider
+  const sliderLabel = formatSliderDate(sim);
+
+  document.getElementById("timeReadout").textContent =
+    `UTC (real): ${utcNowStr} | VN (real): ${vnNowStr} | Slider: ${sliderLabel}`;
+}
+
+
+setInterval(updateTimeReadout, 1000);  // update mỗi giây
+
+// Định nghĩa hàm formatSliderDate
+function formatSliderDate(date) {
+  if (!(date instanceof Date)) return "";
+  const d = date.getDate().toString().padStart(2, "0");
+  const m = (date.getMonth() + 1).toString().padStart(2, "0");
+  const y = date.getFullYear();
+  const hh = date.getHours().toString().padStart(2, "0");
+  const mm = date.getMinutes().toString().padStart(2, "0");
+  return `${d}/${m}/${y} ${hh}:${mm}`;
+}
 
   // Compute earth rotation from simulated time (keeps rotation continuous)
   function updateEarthRotationFromTime(simDate){
@@ -559,6 +575,20 @@
     updateEarthRotationFromTime(sim);
     updateSunForSimulatedTime(sim);
   }
+
+  function updateSunForSimulatedTime(simDate){
+  // Lấy vị trí mặt trời tại VN (lat=15.5, lon=108)
+  const sunPos = SunCalc.getPosition(simDate, 15.5, 108);
+  const x = Math.cos(sunPos.altitude) * Math.cos(sunPos.azimuth);
+  const y = Math.sin(sunPos.altitude);
+  const z = Math.cos(sunPos.altitude) * Math.sin(sunPos.azimuth);
+
+  // cập nhật hướng ánh sáng
+  sunLight.position.set(x, y, z);
+  if (earth && earth.material.uniforms) {
+    earth.material.uniforms.sunDir.value.set(x, y, z).normalize();
+  }
+}
 
   // --- Render loop ---
   let last = performance.now();
@@ -576,16 +606,39 @@
       placeHandleFromOffset();
     }
 
-    // update markers/labels
-    const camDist = camera.position.length();
-    for(const m of markers){
-      const worldPos = new THREE.Vector3();
-      m.mesh.getWorldPosition(worldPos);
-      const scr = projectToScreen(worldPos);
-      const visible = camDist < CITY_SHOW_DISTANCE && scr.z < 1;
-      m.div.style.display = visible ? 'block' : 'none';
-      if(visible){ m.div.style.left = `${scr.x}px`; m.div.style.top = `${scr.y}px`; }
-    }
+// update markers/labels
+const camDist = camera.position.length();
+for(const m of markers){
+  const worldPos = new THREE.Vector3();
+  m.mesh.getWorldPosition(worldPos);
+  const scr = projectToScreen(worldPos);
+  const visible = camDist < CITY_SHOW_DISTANCE && scr.z < 1;
+  m.div.style.display = visible ? 'block' : 'none';
+  if(visible){
+    m.div.style.left = `${scr.x}px`;
+    m.div.style.top  = `${scr.y}px`;
+
+// --- Auto scale marker ---
+// zoom gần -> nhỏ, zoom xa -> to
+let near = 2000;    // khoảng cách gần
+let far  = 30000;   // khoảng cách xa
+let minSize = 3;    // px
+let maxSize = 18;   // px
+
+// nội suy tuyến tính từ near -> far
+let t = (camDist - near) / (far - near);
+t = Math.min(1, Math.max(0, t)); // clamp 0..1
+let size = minSize + t * (maxSize - minSize);
+
+m.div.style.width  = `${size}px`;
+m.div.style.height = `${size}px`;
+m.div.style.borderRadius = "50%";
+m.div.style.background = "red";
+m.div.style.pointerEvents = "none";
+m.div.style.position = "absolute";
+m.div.style.transform = "translate(-50%, -50%)";
+  }
+}
 
     const showProv = camDist < PROVINCE_SHOW_DISTANCE;
     for(const pl of provinceLabels){
@@ -611,14 +664,14 @@
     stats.update();
   }
 
-  // --- Resize ---
-  window.addEventListener('resize', ()=>{
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    buildTimelineTicks(); // rebuild ticks to fit new width
-    placeHandleFromOffset();
-  });
+// Resize
+window.addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  buildTimelineTicks();
+  placeHandleFromOffset();  
+});
 
   // initial utility placement/calls
   // place handle initially after small delay (once timeline built)
@@ -627,6 +680,7 @@
   </script>
 </body>
 </html>
+
 
 
 
