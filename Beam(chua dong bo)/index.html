@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Satellite Simulation Viewer</title>
+  
+  <!-- 1. Tải CSS của Cesium -->
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  
+  <!-- 2. CSS tùy chỉnh cho giao diện -->
+  <style>
+    html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; overflow:hidden; }
+    .hud {
+      position:absolute; left:10px; top:10px; color:#fff; font:12px/1.4 monospace; z-index:10;
+      background:rgba(0,0,0,.45); padding:.6rem .8rem; border-radius:.5rem; white-space:pre;
+    }
+    .panel {
+      position:absolute; right:10px; top:10px; color:#fff; z-index:20;
+      background:rgba(0,0,0,.55); padding:.7rem .9rem; border-radius:.6rem; font:12px/1.4 monospace;
+      min-width: 240px;
+    }
+    .row { display:flex; align-items:center; gap:.5rem; margin:.3rem 0; }
+    .row input[type=range] { width: 140px; }
+    .tag { display:inline-block; padding:.1rem .35rem; background:#1f2937; border-radius:.35rem; margin-left:.35rem;}
+  </style>
+</head>
+<body>
+
+  <!-- 3. Các thành phần giao diện người dùng -->
+  <div id="cesiumContainer"></div>
+  <div class="hud" id="hud"></div>
+
+  <div class="panel">
+    <div class="row">
+      <label><input type="checkbox" id="toggleFoot" checked> Show footprints</label>
+    </div>
+    <div class="row">
+      <label>Min elevation ε:&nbsp;<span id="elevVal" class="tag">40°</span></label>
+    </div>
+    <div class="row">
+      <input type="range" id="elevSlider" min="5" max="60" step="1" value="40">
+    </div>
+    <div class="row">
+      <label>Shell altitude h:&nbsp;<span id="altVal" class="tag">550 km</span></label>
+    </div>
+  </div>
+
+  <!-- 4. Tải thư viện Cesium -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+  
+  <!-- 5. Tải file JS logic của bạn (quan trọng: type="module") -->
+  <script type="module" src="./satellite-beam.js"></script>
+
+</body>
+</html>
