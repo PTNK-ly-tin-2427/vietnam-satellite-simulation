@@ -1,386 +1,71 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
-  <meta charset="UTF-8" />
-  <title>Cesium Việt Nam MAP - Ultra Performance</title>
-  <script src="https://cdn.jsdelivr.net/npm/cesium/Build/Cesium/Cesium.js"></script>
+  <meta charset="utf-8" />
+  <title>Cesium Việt Nam</title>
+  
+  <!-- Tải CSS của Cesium -->
   <link href="https://cdn.jsdelivr.net/npm/cesium/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.1.4/satellite.min.js"></script>
+  
+  <!-- CSS tùy chỉnh cho giao diện -->
   <style>
-    #cesiumContainer {
-      width: 100%;
-      height: 100vh;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
+    html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; overflow:hidden; }
+    .hud {
+      position:absolute; left:10px; top:10px; color:#fff; font:12px/1.4 monospace; z-index:10;
+      background:rgba(0,0,0,.45); padding:.6rem .8rem; border-radius:.5rem; white-space:pre;
+      max-width: 450px;
     }
+    .panel {
+      position:absolute; right:10px; top:10px; color:#fff; z-index:20;
+      background:rgba(0,0,0,.55); padding:.7rem .9rem; border-radius:.6rem; font:12px/1.4 monospace;
+      min-width: 240px;
+    }
+    .row { display:flex; align-items:center; gap:.5rem; margin:.3rem 0; }
+    .row input[type=range] { flex-grow: 1; }
+    .tag { display:inline-block; padding:.1rem .35rem; background:#1f2937; border-radius:.35rem; margin-left:.35rem;}
   </style>
 </head>
 <body>
+
+  <!-- Các thành phần giao diện người dùng -->
   <div id="cesiumContainer"></div>
-  <script>
-    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxYTJmOTU0MS1iMGI5LTQyYmUtOGEyYy00N2RhMWM3ODQ0NzgiLCJpZCI6MzMxNjE1LCJpYXQiOjE3NTUwODMyNTJ9.GfJoFUD2JtuuK71LgrQQ8x7FCQ_fEtxQWxHaRQzuanE';
-    // --- Viewer tối ưu ---
-    const viewer = new Cesium.Viewer("cesiumContainer", {
-      selectionIndicator: false,
-      baseLayerPicker: false,
-      geocoder: false,
-      homeButton: false,
-      sceneModePicker: true,
-      navigationHelpButton: false,
-      animation: false,
-      fullscreenButton: false,
-      shadows: false,
-      shouldAnimate: true,
-      scene3DOnly: false,
-    });
+  <div class="hud" id="hud"></div>
 
-    // Hiện FPS
-    viewer.scene.debugShowFramesPerSecond = true;
+  <div class="panel">
+    <div class="row">
+      <label><input type="checkbox" id="toggleFoot" checked> Hiển thị Footprint</label>
+    </div>
+    <div class="row">
+      <label for="elevSlider">Góc ngẩng ε:</label>
+      <input type="range" id="elevSlider" min="5" max="60" step="1" value="40">
+      <span id="elevVal" class="tag">40°</span>
+    </div>
+  </div>
+  <!-- Tải thư viện Cesium và Satellite.js -->
+  <script src="https://cdn.jsdelivr.net/npm/cesium/Build/Cesium/Cesium.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/4.1.4/satellite.min.js"></script>
+  
+  <!-- SCRIPT LOGIC CHÍNH  -->
+  <script type="module">
+    // Nhập các hàm khởi tạo từ các module bên ngoài
+    import { initializeEarthViewer } from './earth-model.js';
+    import { initializeSatellites } from './satellite-orbit.js';
+    import { initializeSatellitesFootprint } from './satellite-beam.js';
 
-    // Terrain nhẹ
-    viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
-    viewer.scene.globe.maximumScreenSpaceError = 8;
+    async function startApplication() {
+      // 1. Khởi tạo Trái Đất và viewer
+      const { viewer, ellipsoid, R_E } = initializeEarthViewer();
 
-    // Render khi thay đổi
+      // 2. Khởi tạo các vệ tinh
+      const sats = await initializeSatellites(viewer);
 
-viewer.scene.requestRenderMode = false;
-
-// Bật hiển thị FPS
-viewer.scene.debugShowFramesPerSecond = true;
-
-    // Giảm độ phân giải
-    viewer.resolutionScale = 0.8;
-
-    // Tắt hiệu ứng nặng
-    viewer.scene.globe.enableLighting = false;
-    viewer.scene.globe.depthTestAgainstTerrain = false;
-    viewer.scene.fog.enabled = false;
-
-    // --- Nền toàn cầu low-res ---
-    const lowResProvider = new Cesium.SingleTileImageryProvider({
-      url: "light.jpg"
-    });
-    viewer.imageryLayers.addImageryProvider(lowResProvider);
-
-    // --- Overlay VN chi tiết ---
-    const vnProvider = new Cesium.UrlTemplateImageryProvider({
-      url: "light.jpg",
-      minimumLevel: 5,
-      maximumLevel: 12,
-    });
-    const vnLayer = viewer.imageryLayers.addImageryProvider(vnProvider);
-    vnLayer.show = false;
-
-    // Camera mặc định VN
-    viewer.camera.setView({
-      destination: Cesium.Rectangle.fromDegrees(102, 8, 114, 24),
-      orientation: {
-        heading: 0,
-        pitch: -Cesium.Math.PI_OVER_TWO,
-        roll: 0,
-      },
-    });
-
-Cesium.GeoJsonDataSource.load("./VNM_1.geojson", {
-  stroke: Cesium.Color.YELLOW,
-  strokeWidth: 2,
-  clampToGround: false,
-}).then((ds) => {
-  viewer.dataSources.add(ds);
-
-  ds.entities.values.forEach(entity => {
-    if (entity.polygon) {
-      // Style polygon
-      entity.polygon.material = Cesium.Color.YELLOW.withAlpha(0.3);
-      entity.polygon.outline = true;
-      entity.polygon.outlineColor = Cesium.Color.ORANGE;
-
-      // ---- Tính centroid ----
-      const positions = entity.polygon.hierarchy.getValue().positions;
-      let lon = 0, lat = 0;
-      positions.forEach(pos => {
-        const carto = Cesium.Cartographic.fromCartesian(pos);
-        lon += Cesium.Math.toDegrees(carto.longitude);
-        lat += Cesium.Math.toDegrees(carto.latitude);
-      });
-      lon /= positions.length;
-      lat /= positions.length;
-
-      // ---- Thêm label tỉnh ----
-      viewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(lon, lat),
-        label: {
-          text: entity.properties.name || entity.properties.ten_tinh || "???",
-          font: 'bold 20px "Times New Roman", serif',
-          fillColor: Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          show: false,
-          scaleByDistance: new Cesium.NearFarScalar(500000, 1.0, 1500000, 0.0)
-        }
-      });
-    }
-  });
-
-  // Label VIỆT NAM
-  const vietnamLabel = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(107, 16),
-    label: {
-      text: "VIỆT NAM",
-      font: "bold 30px 'Times New Roman', serif",
-      fillColor: Cesium.Color.BLACK,
-      outlineColor: Cesium.Color.WHITE,
-      outlineWidth: 3,
-      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-      verticalOrigin: Cesium.VerticalOrigin.CENTER,
-      heightReference: Cesium.HeightReference.NONE,
-      show: true
-    }
-  });
-
-  // Cập nhật hiển thị label theo zoom
-  function updateLabels() {
-    const cameraHeight = viewer.camera.positionCartographic.height;
-    const showProvinceLabels = cameraHeight < 600000;
-    const showVietnamLabel = cameraHeight >= 500000;
-
-    viewer.entities.values.forEach(entity => {
-      if (entity.label && entity.label.text.getValue() !== "VIỆT NAM") {
-        entity.label.show = showProvinceLabels;
-      }
-      if (entity.polygon) {
-        entity.polygon.material = showProvinceLabels
-          ? Cesium.Color.TRANSPARENT
-          : Cesium.Color.YELLOW.withAlpha(0.1);
-      }
-    });
-
-    vietnamLabel.label.show = showVietnamLabel;
-  }
-
-  viewer.camera.changed.addEventListener(updateLabels);
-  updateLabels();
-}).catch(err => {
-  console.error("❌ Lỗi tải GeoJSON:", err);
-});
-
-
-            const islands = [
-            { name: "Quần Đảo Hoàng Sa", lon: 111.5, lat: 16.5 },
-            { name: "Quần Đảo Trường Sa", lon: 114.3, lat: 8.6 }
-        ];
-
-        islands.forEach(island => {
-            viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(island.lon, island.lat),
-                point: {
-                    pixelSize: 10,
-                    color: Cesium.Color.YELLOW,
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2
-                },
-                label: {
-                    text: island.name,
-                    font: "bold 28px 'Arial', serif",
-                    fillColor: Cesium.Color.PINK,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                    pixelOffset: new Cesium.Cartesian2(0, -10)
-                }
-            });
-        });
-        const majorCities = [
-            { name: "Hà Nội", lon: 105.8544, lat: 21.0285 },
-            { name: "TP.HCM", lon: 106.6297, lat: 10.8231 },
-            { name: "Đà Nẵng", lon: 108.2022, lat: 16.0471 },
-            { name: "Hải Phòng", lon: 106.6823, lat: 20.8449 },
-            { name: "Cần Thơ", lon: 105.7689, lat: 10.0452 },
-            { name: "Huế", lon: 107.5800, lat: 16.4637 },
-        ];
-
-        majorCities.forEach(city => {
-            viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(city.lon, city.lat),
-                point: {
-                pixelSize: 10,
-                color: Cesium.Color.BLUE,
-                outlineColor: Cesium.Color.WHITE,
-                outlineWidth: 2,
-                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
-                },
-                label: {
-                text: city.name,
-                font: "bold 25px 'Times New Roman', serif",
-                fillColor: Cesium.Color.BLACK,
-                outlineColor: Cesium.Color.WHITE,
-                outlineWidth: 1,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -15),
-                scaleByDistance: new Cesium.NearFarScalar(500000, 1.0, 1500000, 0.0)
-                }
-            });
-        });
-    // --- BẮT ĐẦU XỬ LÝ VỆ TINH ---
-
-    // Hằng số hấp dẫn của Trái Đất (km^3/s^2)
-    const GRATIVATIONAL_EARTH_PARAMETER = 398600.4418;
-
-    // Thuật toán tính chu kỳ quỹ đạo gốc
-    function getOrbitalPeriod(position, velocity) {
-        const positionMagnitude = Math.sqrt(
-            Math.pow(position.x, 2) + Math.pow(position.y, 2) + Math.pow(position.z, 2)
-        );
-        const velocityMagnitude = Math.sqrt(
-            Math.pow(velocity.x, 2) + Math.pow(velocity.y, 2) + Math.pow(velocity.z, 2)
-        );
-        const semiMajorAxis = 1 / ((2 / positionMagnitude) - (Math.pow(velocityMagnitude, 2) / GRATIVATIONAL_EARTH_PARAMETER));
-        const orbitalPeriodSeconds = 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / GRATIVATIONAL_EARTH_PARAMETER);
-        return orbitalPeriodSeconds / 60;
-    }
-    
-    // Hàm chuyển đổi gốc (Trái Đất không quay)
-    function eciToGeodeticNonRotating(positionEci) {
-        const gmst = 0; // GMST = 0 => không quay
-        return satellite.eciToGeodetic(positionEci, gmst);
+      // 3. Khởi tạo footprint với dữ liệu vệ tinh đã nhận được
+      initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats);
     }
 
-    function createSatelliteEntity(viewer, name, tleLine1, tleLine2) {
-        const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
-        
-        // --- SỬ DỤNG LẠI THUẬT TOÁN TÍNH TOÁN BAN ĐẦU ---
-        const now = new Date();
-        const pv = satellite.propagate(satrec, now);
-        const position = pv.position;
-        const velocity = pv.velocity;
-        let orbitalPeriod = 92; // fallback nếu không tính được
-        if (position && velocity) {
-            orbitalPeriod = getOrbitalPeriod(position, velocity);
-        }
-        const pointsCount = 240;
-        const minutesBetweenPoints = orbitalPeriod / (pointsCount - 1);
-
-        const sampledPosition = new Cesium.SampledPositionProperty();
-        const orbitPositions = [];
-        const startTime = Cesium.JulianDate.fromDate(now);
-
-        for (let i = 0; i < pointsCount; i++) {
-            const sampleTime = Cesium.JulianDate.addMinutes(startTime, i * minutesBetweenPoints, new Cesium.JulianDate());
-            const jsDate = Cesium.JulianDate.toDate(sampleTime);
-            const currentPv = satellite.propagate(satrec, jsDate);
-            const eci = currentPv.position;
-            if (eci) {
-                // Áp dụng thuật toán gốc để vẽ quỹ đạo tĩnh
-                const gd = eciToGeodeticNonRotating(eci);
-                const lon = Cesium.Math.toDegrees(gd.longitude);
-                const lat = Cesium.Math.toDegrees(gd.latitude);
-                const alt = gd.height * 1000;
-                const cartesian = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
-                
-                // Dùng cùng một bộ giá trị cho cả vị trí động và đường quỹ đạo
-                sampledPosition.addSample(sampleTime, cartesian);
-                orbitPositions.push(cartesian);
-            }
-        }
-        // --- KẾT THÚC THUẬT TOÁN TÍNH TOÁN BAN ĐẦU ---
-
-        if (orbitPositions.length > 0) {
-            orbitPositions.push(orbitPositions[0]);
-        }
-
-        const satelliteEntity = viewer.entities.add({
-            id: name,
-            position: sampledPosition,
-            point: {
-                pixelSize: 8,
-                color: Cesium.Color.RED
-            },
-            label: {
-                text: name,
-                font: '12pt monospace',
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                outlineWidth: 2,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -12)
-            }
-        });
-
-        satelliteEntity.orbitPositions = orbitPositions;
-        satelliteEntity.orbitalPeriod = orbitalPeriod;
-        return satelliteEntity;
-    }
-
-    function toggleSatelliteOrbit(satelliteEntity) {
-        const orbitId = satelliteEntity.id + '-orbit';
-        const existingOrbit = viewer.entities.getById(orbitId);
-
-        if (existingOrbit) {
-            viewer.entities.remove(existingOrbit);
-        } else {
-            viewer.entities.add({
-                id: orbitId,
-                polyline: {
-                    positions: satelliteEntity.orbitPositions,
-                    width: 2,
-                    material: Cesium.Color.YELLOW.withAlpha(0.7),
-                    clampToGround: false
-                }
-            });
-        }
-    }
-
-    async function processTLE() {
-        try {
-            const response = await fetch('satellites.tle');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const tleData = await response.text();
-            const lines = tleData.trim().split(/\r?\n/);
-            
-            let firstSatellitePeriod = 92; // fallback
-
-            for (let i = 0; i < lines.length; i += 3) {
-                const name = lines[i].trim();
-                const tleLine1 = lines[i + 1].trim();
-                const tleLine2 = lines[i + 2].trim();
-
-                if (name && tleLine1 && tleLine2) {
-                    const satEntity = createSatelliteEntity(viewer, name, tleLine1, tleLine2);
-                    if (i === 0) {
-                        firstSatellitePeriod = satEntity.orbitalPeriod;
-                    }
-                }
-            }
-
-            const startTime = Cesium.JulianDate.fromDate(new Date());
-            viewer.clock.startTime = startTime.clone();
-            viewer.clock.stopTime = Cesium.JulianDate.addMinutes(startTime, firstSatellitePeriod, new Cesium.JulianDate());
-            viewer.clock.currentTime = startTime.clone();
-            viewer.clock.shouldAnimate = true;
-            viewer.timeline.zoomTo(viewer.clock.startTime, viewer.clock.stopTime);
-
-        } catch (error) {
-            console.error("❌ Lỗi khi tải hoặc xử lý file TLE:", error);
-        }
-    }
-
-    viewer.screenSpaceEventHandler.setInputAction(function (movement) {
-        const pickedObject = viewer.scene.pick(movement.position);
-        if (Cesium.defined(pickedObject) && Cesium.defined(pickedObject.id)) {
-            const entity = pickedObject.id;
-            if (entity.orbitPositions) {
-                toggleSatelliteOrbit(entity);
-            }
-        }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-    processTLE();
-
+    // Gọi hàm chính để bắt đầu ứng dụng
+    startApplication();
   </script>
-</body>
 
+</body>
 </html>
