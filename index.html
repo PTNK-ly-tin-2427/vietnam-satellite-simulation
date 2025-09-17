@@ -24,7 +24,8 @@
   </style>
 </head>
 <body>
-  <div id="cesiumContainer"></div>
+  <div id="cesiumContainer" style="width:100%; height:100%;"></div>
+
 
   <div id="hudConnection" class="hud-box"></div>
   <style>
@@ -112,6 +113,12 @@
     color:white; padding:10px; font-family:monospace;
     border-radius:8px; font-size:13px;">
     <h3 style="margin-top:0; color:#00ffcc; text-align:center;">SATELLITE SETTINGS</h3>
+    <label>
+      <input type="checkbox" id="toggleSpotBeam" checked>
+      Show Spot Beams
+    </label>
+    <button id="exportData">Export Data</button>
+    
 
     <!-- Chỉ còn checkbox -->
     <div style="margin-bottom:12px;">
@@ -127,37 +134,62 @@
   <script type="module">
     import { initializeEarthViewer } from './earth-model.js';
     import { initializeSatellites } from './satellite-orbit.js';
-    import {setupHoverHUD} from './hover.js';
+    import { setupHoverHUD } from './hover.js';
     import { computeLookAngles, getSatelliteLookAtGS } from './satellite-look.js';
-    import { initializeSatellitesFootprint } from './satellite-beam.js';
-    import { 
-      setGroundStationParams, 
-      setGsoArcProtection, 
-      setFootprintVisible, 
-      createGroundStations 
-          } from './groundstation.js';
-
-
+    import { initializeSatellitesFootprint, exportSimulationData } from './sbb.js';
+    import {
+      setGroundStationParams,
+      setGsoArcProtection,
+      setFootprintVisible,
+      createGroundStations
+    } from './groundstation.js';
+  
     async function startApplication() {
-      const { viewer, ellipsoid, R_E } = initializeEarthViewer();
-      const sats = await initializeSatellites(viewer);
-      // Ground stations
-      const groundStations = createGroundStations(viewer, ellipsoid, R_E, { altKm: 550 });
+  // init viewer
+  const { viewer, ellipsoid, R_E } = initializeEarthViewer();
+  viewer.clock.clockStep = Cesium.ClockStep.SYSTEM_CLOCK;
+  viewer.clock.clockRange = Cesium.ClockRange.UNBOUNDED;
+  viewer.clock.multiplier = 1;
+  viewer.clock.shouldAnimate = true;
+  viewer.clock.currentTime = Cesium.JulianDate.now();
+  viewer.clock.startTime = viewer.clock.currentTime.clone();
+
+  // init satellites
+  const sats = await initializeSatellites(viewer);
+
+  // create ground stations
+  const groundStations = createGroundStations(viewer, ellipsoid, R_E, { altKm: 550 });
+
+  // initialize footprints (API object)
+  const satFootprints = await initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats, groundStations);
+  console.log("satFootprints:", satFootprints);
+
+  // ✅ bây giờ mới dùng được satFootprints
+  satFootprints.setShowFootprints(true);
+  satFootprints.setShowSpotBeams(true);
+  satFootprints.setElevMin(25);
+
+  
+ 
       setupHoverHUD(viewer, sats, groundStations);
 
-      // Satellite footprints
-      const satFootprints = initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats, groundStations);
 
-    // Ví dụ: lấy az/el của vệ tinh đầu tiên tới tất cả GS
-    groundStations.forEach(gs => {
-        const look = getSatelliteLookAtGS(sats[0].satrec, gs);
-        console.log(`${gs.name}: az=${look.azimuth.toFixed(1)}°, el=${look.elevation.toFixed(1)}°`);
-    });
+      // Toggle LOS
+      document.getElementById("toggleFoot").addEventListener("change", e => {
+        if(satFootprints && satFootprints.setShowFootprints)
+          satFootprints.setShowFootprints(!!e.target.checked);
+      });
 
-      // Gateway settings wiring
+      // Toggle Spot Beam
+      document.getElementById("toggleSpotBeam").addEventListener("change", e => {
+        if(satFootprints && satFootprints.setShowSpotBeams)
+          satFootprints.setShowSpotBeams(!!e.target.checked);
+      });
+
+  
+      // --- UI wiring (gateway controls) ---
       let currentElev = 20, currentTiltNS = 0, currentTiltEW = 0, currentAzimuth = 0, currentGSO = 0;
-
-
+  
       const gsElevSlider = document.getElementById("gsElevSlider");
       const gsElevVal = document.getElementById("gsElevVal");
       const tiltNSSlider = document.getElementById("tiltNSSlider");
@@ -168,14 +200,32 @@
       const gsoVal = document.getElementById("gsoVal");
       const toggleGsFoot = document.getElementById("toggleGsFoot");
 
+      document.getElementById("exportData").addEventListener("click", () => {
+  const data = exportSimulationData(viewer, sats, ellipsoid, 25);
+  // Copy thẳng ra clipboard
+  navigator.clipboard.writeText(JSON.stringify(data, null, 2))
+    .then(() => alert("Beam & footprint data copied to clipboard!"));
+});
+  
+      // slider for gateway min elevation (this should update footprint logic)
       if (gsElevSlider) {
         gsElevSlider.addEventListener("input", (e) => {
           currentElev = +e.target.value;
           gsElevVal.textContent = currentElev + "°";
-          window.elevMinDeg = currentElev; // 👈 Global để satellite-beam.js dùng
-          setGroundStationParams(currentElev, currentTiltNS, currentTiltEW, currentAzimuth);
+          // update satellite footprint logic via API returned from initializeSatellitesFootprint
+          if (satFootprints && typeof satFootprints.setElevMin === "function") {
+            satFootprints.setElevMin(currentElev);
+          } else {
+            // fallback: set a global (legacy), though new implementation prefers API
+            if (satFootprints && satFootprints.setElevMin) {
+  satFootprints.setElevMin(currentElev);
+}
+setGroundStationParams(currentElev, currentTiltNS, currentTiltEW, currentAzimuth);
+          }
         });
       }
+  
+      // Dish tilt controls (these call your groundstation helper)
       if (tiltNSSlider) {
         tiltNSSlider.addEventListener("input", (e) => {
           currentTiltNS = +e.target.value;
@@ -184,6 +234,7 @@
           setGroundStationParams(currentElev, currentTiltNS, currentTiltEW, currentAzimuth);
         });
       }
+  
       if (tiltEWSlider) {
         tiltEWSlider.addEventListener("input", (e) => {
           currentTiltEW = +e.target.value;
@@ -192,6 +243,7 @@
           setGroundStationParams(currentElev, currentTiltNS, currentTiltEW, currentAzimuth);
         });
       }
+  
       if (gsoSlider) {
         gsoSlider.addEventListener("input", (e) => {
           currentGSO = +e.target.value;
@@ -199,40 +251,41 @@
           setGsoArcProtection(currentGSO, 40);
         });
       }
-
+  
       if (toggleGsFoot) {
         toggleGsFoot.addEventListener("change", (e) => {
           setFootprintVisible(!!e.target.checked);
         });
       }
-
+  
       // Toggle panels
       const toggleSimBtn = document.getElementById("toggleSimBtn");
       const simControls = document.getElementById("sim-controls");
       toggleSimBtn.addEventListener("click", () => {
         simControls.style.display = (simControls.style.display === "block") ? "none" : "block";
       });
-
+  
       const toggleSatBtn = document.getElementById("toggleSatBtn");
       const satControls = document.getElementById("sat-controls");
       toggleSatBtn.addEventListener("click", () => {
         satControls.style.display = (satControls.style.display === "block") ? "none" : "block";
       });
-
-      // Satellite footprints toggle
+  
+      // Satellite footprints toggle (Show/Hide all ellipses)
       const toggleFoot = document.getElementById("toggleFoot");
       if (toggleFoot) {
         toggleFoot.addEventListener("change", (e) => {
-          if (satFootprints && Array.isArray(satFootprints)) {
-            satFootprints.forEach(fp => { if (fp && fp.ellipse) fp.ellipse.show = e.target.checked; });
-          }
-        });
+  if (satFootprints && satFootprints.setShowFootprints) {
+    satFootprints.setShowFootprints(!!e.target.checked);
+  } else {
+    window.showFootprints = !!e.target.checked;
+  }
+});
       }
     }
-
-    startApplication();
+    startApplication().catch(err => {
+      console.error("startApplication error:", err);
+    });
   </script>
-</body>
-</html>
-
+  
 
