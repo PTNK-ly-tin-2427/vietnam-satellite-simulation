@@ -110,7 +110,8 @@ const state = {
     ];
   
     stations.forEach((s) => {
-      s.ecf = Cesium.Cartesian3.fromDegrees(s.lon, s.lat);
+      s.ecf = Cesium.Cartesian3.fromDegrees(s.lon, s.lat, 0, ellipsoid);
+
       s.entity = viewer.entities.add({
         position: s.ecf,
         point: { pixelSize: 10, color: Cesium.Color.AQUA, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },

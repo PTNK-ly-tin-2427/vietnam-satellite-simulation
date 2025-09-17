@@ -1,8 +1,10 @@
+
 export function initializeEarthViewer() {
     // --- Cấu hình Token và Viewer tối ưu ---
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxYTJmOTU0MS1iMGI5LTQyYmUtOGEyYy00N2RhMWM3ODQ0NzgiLCJpZCI6MzMxNjE1LCJpYXQiOjE3NTUwODMyNTJ9.GfJoFUD2JtuuK71LgrQQ8x7FCQ_fEtxQWxHaRQzuanE';
     
     const viewer = new Cesium.Viewer("cesiumContainer", {
+      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
       selectionIndicator: false,
       baseLayerPicker: false,
       geocoder: false,
@@ -25,6 +27,7 @@ export function initializeEarthViewer() {
     viewer.scene.globe.enableLighting = false;
     viewer.scene.globe.depthTestAgainstTerrain = false;
     viewer.scene.fog.enabled = false;
+
 
     // --- Nền toàn cầu low-res ---
     viewer.imageryLayers.addImageryProvider(

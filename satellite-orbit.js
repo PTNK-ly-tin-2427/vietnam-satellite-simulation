@@ -121,7 +121,7 @@ function toggleSatelliteOrbit(viewer, satelliteEntity) {
 export async function initializeSatellites(viewer) {
     const createdSats = [];
     try {
-        const response = await fetch('satellites.tle');
+        const response = await fetch('vietnam_constellation.txt');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const tleData = await response.text();
