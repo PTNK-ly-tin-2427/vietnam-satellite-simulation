@@ -67,9 +67,9 @@
     <div style="margin-bottom:16px;">
       <div style="display:flex; justify-content:space-between;">
         <span>MINIMUM ELEVATION:</span>
-        <span id="gsElevVal">20°</span>
+        <span id="gsElevVal">25°</span>
       </div>
-      <input type="range" id="gsElevSlider" min="5" max="80" value="20" style="width:100%;">
+      <input type="range" id="gsElevSlider" min="5" max="80" value="25" style="width:100%;">
     </div>
 
     <!-- Dishy Tilt North-South -->
@@ -117,8 +117,8 @@
       <input type="checkbox" id="toggleSpotBeam" checked>
       Show Spot Beams
     </label>
-    <button id="exportData">Export Data</button>
-    
+
+    <button id="exportData">Export Data</button>   
 
     <!-- Chỉ còn checkbox -->
     <div style="margin-bottom:12px;">
@@ -165,8 +165,8 @@
   console.log("satFootprints:", satFootprints);
 
   // ✅ bây giờ mới dùng được satFootprints
-  satFootprints.setShowFootprints(true);
-  satFootprints.setShowSpotBeams(true);
+  satFootprints.setShowFootprints(false);
+  satFootprints.setShowSpotBeams(false);
   satFootprints.setElevMin(25);
 
   
@@ -188,7 +188,7 @@
 
   
       // --- UI wiring (gateway controls) ---
-      let currentElev = 20, currentTiltNS = 0, currentTiltEW = 0, currentAzimuth = 0, currentGSO = 0;
+      let currentElev = 25, currentTiltNS = 0, currentTiltEW = 0, currentAzimuth = 0, currentGSO = 0;
   
       const gsElevSlider = document.getElementById("gsElevSlider");
       const gsElevVal = document.getElementById("gsElevVal");

@@ -121,7 +121,7 @@ function toggleSatelliteOrbit(viewer, satelliteEntity) {
 export async function initializeSatellites(viewer) {
     const createdSats = [];
     try {
-        const response = await fetch('satellites.tle');
+        const response = await fetch('best_constellation.tle');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const tleData = await response.text();

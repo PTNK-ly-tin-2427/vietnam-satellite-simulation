@@ -64,21 +64,16 @@ export function setupHoverHUD(viewer, createdSats) {
           azDeg = firstGS.azimuth.toFixed(2);
         }
       }
-  
+    
       // Cập nhật HUD
-      satHud.style.left = movement.endPosition.x + 15 + "px";
-      satHud.style.top = movement.endPosition.y + 15 + "px";
-      satHud.innerText =
-        `SATELLITE: ${sat.id}\n` +
-        `Altitude: ${altKm} km\n` +
-        `Orbital period: ${orbitalPeriod} min` +
-        (elDeg !== undefined && azDeg !== undefined
-          ? `\nElevation: ${elDeg}°\nAzimuth: ${azDeg}°`
-          : "");
-      satHud.style.display = "block";
-  
-      // Debug log
-      console.log("HUD:", sat.name, "Alt=", altKm, "km", "Period=", orbitalPeriod, "min");
-    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
-  }
+      //satHud.style.left = movement.endPosition.x + 15 + "px";
+      //satHud.style.top = movement.endPosition.y + 15 + "px";
+      //satHud.innerText =
+       // `SATELLITE: ${sat.id}\n` +
+       // `Altitude: ${altKm} km\n` +
+       // `Orbital period: ${orbitalPeriod} min` +
+      //  (elDeg !== undefined && azDeg !== undefined
+       //   ? `\nElevation: ${elDeg}°\nAzimuth: ${azDeg}°`
+      }
+    )}
   

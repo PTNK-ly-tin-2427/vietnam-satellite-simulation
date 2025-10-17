@@ -2,7 +2,7 @@
 
 // ================== State & Global ==================
 const state = {
-    elev: 20, // default min elevation
+    elev: 25, // default min elevation
     tiltNS: 0,
     tiltEW: 0,
     azimuth: 0,
@@ -110,7 +110,8 @@ const state = {
     ];
   
     stations.forEach((s) => {
-      s.ecf = Cesium.Cartesian3.fromDegrees(s.lon, s.lat);
+      s.ecf = Cesium.Cartesian3.fromDegrees(s.lon, s.lat, 0, ellipsoid);
+
       s.entity = viewer.entities.add({
         position: s.ecf,
         point: { pixelSize: 10, color: Cesium.Color.AQUA, outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
@@ -126,7 +127,7 @@ const state = {
     // coverage polygon
     s.coverageEntity = viewer.entities.add({
         name: "Coverage " + s.name,
-        show: true, // 👈 mặc định bật
+        show: false, // 👈 mặc định bật
         allowPicking: false ,
         polygon: {
           hierarchy: new Cesium.CallbackProperty(() => {

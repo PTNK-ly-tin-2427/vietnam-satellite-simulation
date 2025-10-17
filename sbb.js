@@ -15,8 +15,8 @@ function beamFootprintRadiusMeters(R_E, alt_km, beamHalfDeg) {
 }
 
 export async function initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats, groundStations) {
-  let showFootprints = true;
-  let showBeamFootprint = true;
+  let showFootprints = false;
+  let showBeamFootprint = false;
   let elevMinDeg = 25;
   const satFootprints = [];
 
@@ -50,17 +50,6 @@ export async function initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats
 
   refreshHUD();
 
-  // === MATH: footprint ===
-
-
- function beamCentralAngle(altKm, beamHalfDeg) {
-    const R = R_E;
-    const h = altKm;
-    const theta = Cesium.Math.toRadians(beamHalfDeg);
-    let cosPsi = (R / (R + h)) * Math.cos(theta);
-    cosPsi = Math.min(1, Math.max(-1, cosPsi));
-    return Math.acos(cosPsi); // rad
-  }
 
   // === MATH: elevation ===
   const scratchEnuTransform = new Cesium.Matrix4();
@@ -161,27 +150,63 @@ export async function initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats
   const beamHalfDeg = satEntity.beamHalfDeg || defaultSatBeamHalfDeg;
   const beamR = beamFootprintRadiusMeters(R_E, altKm, beamHalfDeg);
 
-  // tạo lưới hex phẳng (tangent plane tại sub-sat)
-  const centers = generateHexCenters(beamR, visR);
+  satEntity._altKm = altKm;
+  satEntity._visR = visR;
+  satEntity._beamR = beamR;
+  satEntity._beamHalfDeg = beamHalfDeg;
 
-  centers.forEach(([x, y]) => {
+
+  console.log(`[${satEntity.name || satEntity.id}] alt=${altKm.toFixed(1)} km, LOS radius=${(visR/1000).toFixed(1)} km, Beam radius=${(beamR/1000).toFixed(2)} km (halfAngle=${beamHalfDeg}°)`);
+
+  // tạo lưới hex phẳng (tangent plane tại sub-sat)
+  satEntity._beams = [];
+  const centers = generateHexCenters(beamR, visR);
+  
+  centers.forEach(([x, y], i) => {
+    satEntity._beams.push({
+      index: i,
+      halfAngleDeg: beamHalfDeg,
+      radiusMeters: beamFootprintRadiusMeters(R_E, altKm, beamHalfDeg),
+  
+      // Hàm động: lấy tâm beam tại 1 thời điểm
+      getCenter: (time) => {
+        const pos = satEntity.position?.getValue(time);
+        if (!pos) return null;
+  
+        const carto = ellipsoid.cartesianToCartographic(pos);
+        const subSat = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0, ellipsoid);
+        const enu = Cesium.Transforms.eastNorthUpToFixedFrame(subSat, ellipsoid);
+  
+        const local = new Cesium.Cartesian3(x, y, 0);
+        const globalPos = Cesium.Matrix4.multiplyByPoint(enu, local, new Cesium.Cartesian3());
+  
+        // Ép beam về mặt đất
+        const cc = ellipsoid.cartesianToCartographic(globalPos);
+        return {
+          lat: Cesium.Math.toDegrees(cc.latitude),
+          lon: Cesium.Math.toDegrees(cc.longitude),
+        };
+      },
+    });
+
+  
+    // ==== ENTITY VẼ TRÊN MAP ====
     const beamEntity = viewer.entities.add({
       position: new Cesium.CallbackProperty(time => {
         const satPos = satEntity.position?.getValue(time);
         if (!satPos) return null;
   
         const carto = ellipsoid.cartesianToCartographic(satPos);
-        const subSat = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0, ellipsoid);
+        const subSatNow = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0, ellipsoid);
   
-        // ENU transform
-        const enu = Cesium.Transforms.eastNorthUpToFixedFrame(subSat, ellipsoid);
-        const local = new Cesium.Cartesian3(x, y, 0);
-        const globalPos = Cesium.Matrix4.multiplyByPoint(enu, local, new Cesium.Cartesian3());
+        const enuNow = Cesium.Transforms.eastNorthUpToFixedFrame(subSatNow, ellipsoid);
+        const localNow = new Cesium.Cartesian3(x, y, 0);
+        const globalNow = Cesium.Matrix4.multiplyByPoint(enuNow, localNow, new Cesium.Cartesian3());
   
-        const elev = calculateElevationAngle(globalPos, satPos); 
+        const elev = calculateElevationAngle(globalNow, satPos);
         if (elev < elevMinDeg) return null;
   
-        return globalPos;
+        return globalNow;
       }, false),
       ellipse: {
         semiMajorAxis: beamFootprintRadiusMeters(R_E, altKm, beamHalfDeg),
@@ -194,9 +219,10 @@ export async function initializeSatellitesFootprint(viewer, ellipsoid, R_E, sats
         show: new Cesium.CallbackProperty(() => showBeamFootprint && showFootprints, false)
       }
     });
+  
     beamEntities.push(beamEntity);
   });
-})
+  })  
   
 // kiểm tra elevation từ sub-sat
 
@@ -302,56 +328,46 @@ return {
 };
 }
 export function exportSimulationData(viewer, sats, ellipsoid, R_E, elevMinDeg = 25) {
-  const data = sats.map(sat => {
+  const satArray = Array.isArray(sats) ? sats : (sats.values || []);
+
+  const data = satArray.map((sat) => {
     const pos = sat.position?.getValue(viewer.clock.currentTime);
     if (!pos) return null;
 
     const carto = ellipsoid.cartesianToCartographic(pos);
     const lat = Cesium.Math.toDegrees(carto.latitude);
     const lon = Cesium.Math.toDegrees(carto.longitude);
-    const altKm = carto.height / 1000.0;
 
-    const visR = footprintRadiusMeters(R_E, altKm, elevMinDeg);
-
-    // footprint polygon
-    const footprintOutline = [];
-    const N = 72;
-    for (let i = 0; i < N; i++) {
-      const az = (2 * Math.PI * i) / N;
-      const d = visR;
-      const local = new Cesium.Cartesian3(d * Math.cos(az), d * Math.sin(az), 0);
-      const enuTransform = Cesium.Transforms.eastNorthUpToFixedFrame(pos, ellipsoid);
-      const global = Cesium.Matrix4.multiplyByPoint(enuTransform, local, new Cesium.Cartesian3());
-      const c = ellipsoid.cartesianToCartographic(global);
-      footprintOutline.push([Cesium.Math.toDegrees(c.longitude), Cesium.Math.toDegrees(c.latitude)]);
-    }
-
-    // Spot beams
-    const beams = (sat.beamEntities || []).map(b => {
-      const center = b.position.getValue(viewer.clock.currentTime);
-      if (!center) return null;
-      const cc = ellipsoid.cartesianToCartographic(center);
-      const beamLat = Cesium.Math.toDegrees(cc.latitude);
-      const beamLon = Cesium.Math.toDegrees(cc.longitude);
-
+    // ✅ gọi lại beam center động
+    const beams = (sat._beams || []).map((b) => {
+      const cc = b.getCenter(viewer.clock.currentTime);
       return {
-        lat: beamLat,
-        lon: beamLon,
-        halfAngleDeg: sat.beamHalfDeg || 1.5,
-        radiusMeters: beamFootprintRadiusMeters(R_E, altKm, sat.beamHalfDeg || 1.5)
+        index: b.index,
+        lat: cc?.lat,
+        lon: cc?.lon,
+        halfAngleDeg: b.halfAngleDeg,
+        radiusMeters: b.radiusMeters,
       };
-    }).filter(Boolean);
+    });
 
     return {
       satId: sat.id,
-      position: { lat, lon, altKm },
+      name: sat.name || null,
+      position: {
+        altKm: sat._altKm,
+        lat,
+        lon,
+      },
       tle: sat.tle || null,
-      los: { radiusMeters: visR, outline: footprintOutline },
-      beams
+      los: {
+        radiusMeters: sat._visR,
+        // TODO: nếu muốn xuất polygon coverage thì thêm ở đây
+      },
+      beams,
     };
   }).filter(Boolean);
 
   console.log("=== EXPORT DATA ===");
-  console.log(JSON.stringify(data));
+  console.log(JSON.stringify(data, null, 2));
   return data;
 }
