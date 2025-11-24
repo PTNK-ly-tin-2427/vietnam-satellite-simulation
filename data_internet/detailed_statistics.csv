@@ -1,0 +1,4 @@
+constellation,coverage_pct_mean,coverage_pct_std,coverage_pct_min,coverage_pct_max,avg_snr_dB_mean,avg_snr_dB_std,avg_snr_dB_min,avg_snr_dB_max,avg_thr_Mbps_mean,avg_thr_Mbps_std,avg_thr_Mbps_min,avg_thr_Mbps_max,avg_availability_pct_mean,avg_availability_pct_std,avg_availability_pct_min,avg_availability_pct_max,overall_score
+503km (case 90),99.99,0.09,98.89,100.0,21.83,0.1,21.55,22.08,203.16,0.92,200.75,205.55,99.1,0.01,99.07,99.12,106.109
+665km (case 95),100.0,0.0,100.0,100.0,19.65,0.07,19.45,19.86,189.27,0.37,188.18,190.44,98.93,0.01,98.91,98.96,102.0695
+598km (case 80),100.0,0.0,100.0,100.0,20.62,0.06,20.4,20.77,194.76,0.34,193.5,195.56,99.02,0.01,98.99,99.03,103.698
