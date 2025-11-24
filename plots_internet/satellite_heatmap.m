@@ -1,142 +1,203 @@
-%% ================== 1. CONFIGURATION & INPUTS ==================
+%% ==================== CONFIGURATION ====================
 clc; clear; close all;
 
-% Định nghĩa đường dẫn file
-vn_gdf_path = 'D:\NCKH\vietnam-satellite-simulation\data_internet\VNM_1.geojson';
-pop_df_path = 'D:\NCKH\vietnam-satellite-simulation\data_internet\vnm_pd_2020_1km_UNadj_ASCII_XYZ.csv';
-perf_df_path = 'D:\NCKH\vietnam-satellite-simulation\data_internet\performance_comparison.csv';
+% --- ĐƯỜNG DẪN GỐC ---
+rootDir = 'D:\NCKH\vietnam-satellite-simulation\data_internet';
 
-% Output path (để lưu file .fig cùng thư mục data)
-output_dir = fileparts(vn_gdf_path);
+% File input cho phần phân tích đảo (Part 1)
+% Giả sử file details nằm trong thư mục con data_internet_95 bước 0 (theo prompt cũ)
+% Hoặc bạn có thể sửa đường dẫn này trỏ thẳng đến file details.csv bạn muốn quét
+detailsPath = fullfile(rootDir, 'data_internet_95', '0', 'details.csv'); 
 
-%% ================== 2. LOAD DATA ==================
-fprintf('Đang đọc dữ liệu...\n');
+% File input cho phần vẽ Map (Part 2)
+vn_gdf_path = fullfile(rootDir, 'VNM_1.geojson');
+pop_df_path = fullfile(rootDir, 'vnm_pd_2020_1km_UNadj_ASCII_XYZ.csv');
+perf_df_path = fullfile(rootDir, 'performance_comparison.csv');
 
-% Đọc file CSV
-pop_df = readtable(pop_df_path);
-perf_df = readtable(perf_df_path, 'VariableNamingRule', 'preserve');
+output_dir = rootDir;
 
-% Đọc file GeoJSON (Yêu cầu Mapping Toolbox R2021b+)
-try
-    vn_gdf = readgeotable(vn_gdf_path);
-    hasMapData = true;
-catch
-    warning('Không thể đọc file GeoJSON (có thể do thiếu Mapping Toolbox). Sẽ bỏ qua vẽ biên giới.');
-    hasMapData = false;
+%% =============================================================
+%% PART 1: ANALYZE ISLAND POINTS (PHÂN TÍCH VÙNG LÕI ĐẢO)
+%% =============================================================
+fprintf('================================================================\n');
+fprintf('🔍 PART 1: PHÂN TÍCH ĐIỂM ĐẢO TỪ FILE DETAILS\n');
+fprintf('   File: %s\n', detailsPath);
+fprintf('================================================================\n');
+
+% Cấu hình Bounding Box
+HS_LAT_RANGE = [15.4, 17.5];
+HS_LON_RANGE = [111.0, 113.5];
+
+TS_LAT_RANGE = [6.5, 12.0];
+TS_LON_RANGE = [111.5, 117.2];
+
+if exist(detailsPath, 'file')
+    try
+        % Đọc file
+        opts = detectImportOptions(detailsPath);
+        opts.VariableNamingRule = 'preserve';
+        df = readtable(detailsPath, opts);
+        
+        % --- 1. Khu vực Hoàng Sa ---
+        hs_mask = (df.lat >= HS_LAT_RANGE(1)) & (df.lat <= HS_LAT_RANGE(2)) & ...
+                  (df.lon >= HS_LON_RANGE(1)) & (df.lon <= HS_LON_RANGE(2));
+        hs_points = df(hs_mask, :);
+        
+        % Loại bỏ trùng lặp (lat, lon)
+        [~, uniqueIdx] = unique(hs_points(:, {'lat', 'lon'}));
+        hs_unique = hs_points(uniqueIdx, :);
+        
+        printIslandResults('HOÀNG SA', hs_unique, HS_LAT_RANGE, HS_LON_RANGE);
+        
+        % --- 2. Khu vực Trường Sa ---
+        ts_mask = (df.lat >= TS_LAT_RANGE(1)) & (df.lat <= TS_LAT_RANGE(2)) & ...
+                  (df.lon >= TS_LON_RANGE(1)) & (df.lon <= TS_LON_RANGE(2));
+        ts_points = df(ts_mask, :);
+        
+        % Loại bỏ trùng lặp
+        [~, uniqueIdx] = unique(ts_points(:, {'lat', 'lon'}));
+        ts_unique = ts_points(uniqueIdx, :);
+        
+        printIslandResults('TRƯỜNG SA', ts_unique, TS_LAT_RANGE, TS_LON_RANGE);
+        
+    catch ME
+        fprintf('❌ Lỗi xử lý file CSV: %s\n', ME.message);
+    end
+else
+    fprintf('❌ Không tìm thấy file details.csv tại đường dẫn trên.\n');
 end
 
-%% ================== 3. DATA PROCESSING ==================
-% Lấy thông tin chùm vệ tinh đầu tiên (Target Constellation)
+%% =============================================================
+%% PART 2: HEATMAP VISUALIZATION (VẼ BẢN ĐỒ)
+%% =============================================================
+fprintf('\n================================================================\n');
+fprintf('🎨 PART 2: VẼ BẢN ĐỒ HEATMAP (KÈM DỮ LIỆU ĐẢO BỔ SUNG)\n');
+fprintf('================================================================\n');
+
+% 1. Load Data
+pop_df = readtable(pop_df_path); % Cột: X, Y, Z
+perf_df = readtable(perf_df_path, 'VariableNamingRule', 'preserve');
+
+try
+    vn_gdf = readgeotable(vn_gdf_path);
+    hasMap = true;
+catch
+    warning('Thiếu Mapping Toolbox hoặc lỗi file GeoJSON. Sẽ bỏ qua vẽ biên giới.');
+    hasMap = false;
+end
+
+% 2. Lấy thông số vệ tinh (Case đầu tiên)
 target_const = perf_df.constellation{1};
-% Lấy giá trị throughput (tương đương throughputs[target_const] trong Python)
 throughput_supply_km2 = perf_df.("Throughput (Mbps)")(1);
+fprintf('📡 Constellation: %s | Supply: %.2f Mbps/km2\n', target_const, throughput_supply_km2);
 
-fprintf('Constellation: %s | Supply: %.2f Mbps/km2\n', target_const, throughput_supply_km2);
+% 3. Bổ sung dữ liệu đảo (Manual Insert)
+% Tạo các mảng dữ liệu đảo tương ứng Python code
+lat_islands = [ ...
+    16.3533; 16.4533; 16.4533; ... % HS
+    7.5533; 7.6533; 7.6533; 7.7533; 8.1533; 8.3533; ... % TS
+    10.329969200802104; 10.89014760153961; 8.8533; 9.6533; ...
+    9.7533; 10.5533; 10.8533; 10.8533; 10.8533; 11.0533];
 
-% --- Tính toán Concurrency Ratio (Vectorized) ---
-Z = pop_df.Z; % Population density
-concurrency_ratio = zeros(size(Z));
+lon_islands = [ ...
+    112.0421; 111.5421; 111.7421; ... % HS
+    111.5421; 113.8421; 113.9421; 114.1421; 114.7421; 115.2421; ... % TS
+    114.68588732078119; 114.56660587630368; 114.6421; 112.9421; ...
+    116.4421; 116.9421; 116.2421; 116.6421; 116.8421; 114.3421];
 
-% Logic: >= 2000 -> 0.75; >= 200 -> 0.30; < 200 -> 0.15
+z_islands = repmat(50, length(lat_islands), 1); % Mật độ Z = 50
+
+% Tạo table đảo và gộp
+island_tbl = table(lon_islands, lat_islands, z_islands, 'VariableNames', {'X', 'Y', 'Z'});
+pop_df = [pop_df; island_tbl];
+fprintf('➕ Đã thêm %d điểm đảo vào dữ liệu.\n', height(island_tbl));
+
+% 4. Tính toán Logic (Vectorized)
+% Concurrency Ratio logic
+concurrency_ratio = zeros(height(pop_df), 1);
+Z = pop_df.Z;
 concurrency_ratio(Z >= 2000) = 0.75;
 concurrency_ratio(Z >= 200 & Z < 2000) = 0.30;
 concurrency_ratio(Z < 200) = 0.15;
 
-% Tính Active Users
+% Active Users & Throughput per User
 active_users = Z .* concurrency_ratio;
-
-% Tính Throughput per User
-% Logic Python: supply / users if users >= 1 else supply
 throughput_per_user = throughput_supply_km2 ./ active_users;
-throughput_per_user(active_users < 1) = throughput_supply_km2;
+throughput_per_user(active_users < 1) = throughput_supply_km2; % Nếu user < 1 thì max supply
 
-%% ================== 4. PREPARE PLOTTING COLORS ==================
-% Định nghĩa Bins và Labels
+% 5. Cấu hình màu sắc (Color Bins)
 bins = [0, 1, 2, 5, 10, 20, 50, 100];
-labels = {
-    '0-1 Mbps (Low usage)';
-    '1-2 Mbps (Basic Web)';
-    '2-5 Mbps (Video Call)';
-    '5-10 Mbps (HD Streaming)';
-    '10-20 Mbps (Full HD/4K)';
-    '20-50 Mbps (High Speed)';
-    '50-100 Mbps (Ultra/RT)'
-};
-
-% Định nghĩa màu (HEX -> RGB)
+labels = {'0-1 Mbps', '1-2 Mbps', '2-5 Mbps', '5-10 Mbps', '10-20 Mbps', '20-50 Mbps', '50-100 Mbps'};
 hexColors = {'#d73027', '#fc8d59', '#fee08b', '#d9ef8b', '#91cf60', '#1a9850', '#006837'};
-cmap = zeros(length(hexColors), 3);
+
+% Chuyển Hex sang RGB
+customCmap = zeros(length(hexColors), 3);
 for i = 1:length(hexColors)
-    cmap(i, :) = hex2rgb(hexColors{i});
+    customCmap(i, :) = sscanf(hexColors{i}(2:end), '%2x%2x%2x')' / 255;
 end
 
-% Discretize dữ liệu để tô màu theo bin (thay vì nội suy tuyến tính)
-% Hàm discretize trả về index (1 đến 7) tương ứng với bin
+% Discretize dữ liệu để tô màu theo bin
 color_indices = discretize(throughput_per_user, bins);
 
-%% ================== 5. PLOTTING ==================
-fprintf('Đang vẽ biểu đồ...\n');
-
-fig = figure('Name', 'User Throughput Density', 'Color', 'w', 'Position', [100, 100, 1000, 800]);
+% 6. Vẽ Biểu Đồ
+fig = figure('Name', 'Vietnam Satellite Throughput', 'Color', 'w', 'Position', [50, 50, 1000, 850]);
 ax = axes(fig);
-hold on; axis equal; box on;
+hold on; axis equal; box on; grid on;
 
-% 1. Vẽ biên giới Việt Nam (nếu có dữ liệu GeoJSON)
-if hasMapData
-    % geoshow tự động nhận diện Lat/Lon trong table
+% Vẽ biên giới VN
+if hasMap
     geoshow(vn_gdf, 'FaceColor', 'none', 'EdgeColor', 'k', 'LineWidth', 1, 'Parent', ax);
 end
 
-% 2. Vẽ Scatter Plot (Heatmap)
-% Dùng color_indices để map vào màu đã định nghĩa
-scatter(pop_df.X, pop_df.Y, 45, color_indices, 'filled', 's'); 
+% Vẽ Scatter (Heatmap)
+scatter(pop_df.X, pop_df.Y, 45, color_indices, 'filled', 's');
 
-% 3. Cấu hình trục và tiêu đề
-xlabel('Longitude', 'FontSize', 12);
-ylabel('Latitude', 'FontSize', 12);
-title({'\bf Estimated User Throughput Density'; '(Based on Peak Hour Concurrency)'}, ...
-      'FontSize', 16, 'Interpreter', 'tex');
+% Trang trí
+title({'Estimated User Throughput Density', '(Based on Peak Hour Concurrency)'}, 'FontSize', 14, 'FontWeight', 'bold');
+xlabel('Longitude'); ylabel('Latitude');
+xlim([102, 118]); ylim([6, 24]); % Zoom bao quát cả Trường Sa
 
-% 4. Cấu hình Colorbar tùy chỉnh (Discrete)
-colormap(ax, cmap); % Set colormap cho axes hiện tại
-clim(ax, [1, 8]);   % Set giới hạn màu từ index 1 đến 8 (để khớp 7 khoảng màu)
-
+% Colorbar tùy chỉnh
+colormap(ax, customCmap);
+clim(ax, [1, 8]); % 7 khoảng màu tương ứng index 1->7
 c = colorbar(ax);
-c.Label.String = '\bf Quality of Service (QoS) Level';
-c.Label.FontSize = 13;
-c.Label.Interpreter = 'tex';
-
-% Chỉnh vị trí Ticks nằm giữa các khoảng màu
-c.Ticks = 1.5 : 1 : 7.5; 
+c.Label.String = 'Quality of Service (QoS)';
+c.Label.FontSize = 12;
+c.Label.FontWeight = 'bold';
+c.Ticks = 1.5 : 1 : 7.5; % Đặt tick giữa các ô màu
 c.TickLabels = labels;
 
-% Grid và giới hạn khung nhìn
-grid on;
-ax.GridAlpha = 0.3;
-ax.GridLineStyle = '--';
-xlim([102, 110]); % Zoom vào khu vực VN (tùy chỉnh nếu cần)
-ylim([8, 24]);
-
-%% ================== 6. EXPORT ==================
-savePath = fullfile(output_dir, 'estimated_throughput_map.fig');
+% Xuất file
+savePath = fullfile(output_dir, 'estimated_throughput_map_full.fig');
 savefig(fig, savePath);
-
-% Lưu thêm ảnh PNG để xem nhanh
-savePathImg = fullfile(output_dir, 'estimated_throughput_map.png');
+savePathImg = fullfile(output_dir, 'estimated_throughput_map_full.png');
 exportgraphics(fig, savePathImg, 'Resolution', 300);
-
 fprintf('🎉 Hoàn tất! File đã lưu tại: %s\n', savePath);
 
 
-%% ================== HELPER FUNCTIONS ==================
-function rgb = hex2rgb(hexStr)
-    % Chuyển đổi mã Hex (#RRGGBB) sang RGB [0-1]
-    hexStr = strrep(hexStr, '#', '');
-    if length(hexStr) ~= 6
-        error('Mã hex không hợp lệ');
+%% ==================== LOCAL FUNCTIONS ====================
+function printIslandResults(areaName, data, latRange, lonRange)
+    fprintf('\n🏝️  KHU VỰC %s (Box: %.1f-%.1f N, %.1f-%.1f E)\n', areaName, latRange, lonRange);
+    fprintf('%s\n', repmat('-', 1, 80));
+    
+    if ~isempty(data)
+        fprintf('✅ Tìm thấy: %d điểm duy nhất.\n', height(data));
+        fprintf('%-10s %-10s %-15s %-10s %s\n', 'Lat', 'Lon', 'Beam ID', 'SNR (dB)', 'Thr (Mbps)');
+        fprintf('%s\n', repmat('-', 1, 80));
+        
+        for i = 1:height(data)
+            row = data(i, :);
+            % Xử lý beam_id (nếu là số thì chuyển string, nếu string giữ nguyên)
+            if isnumeric(row.beam_id)
+                b_id = num2str(row.beam_id);
+            else
+                b_id = char(row.beam_id);
+            end
+            
+            fprintf('%-10.4f %-10.4f %-15s %-10.2f %.2f\n', ...
+                row.lat, row.lon, b_id, row.("SNR_dB"), row.("throughput_Mbps"));
+        end
+    else
+        fprintf('⚠️ Không tìm thấy điểm nào.\n');
     end
-    r = sscanf(hexStr(1:2), '%x') / 255;
-    g = sscanf(hexStr(3:4), '%x') / 255;
-    b = sscanf(hexStr(5:6), '%x') / 255;
-    rgb = [r, g, b];
 end
